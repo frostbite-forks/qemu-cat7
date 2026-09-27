@@ -380,7 +380,7 @@ static void ppc_core99_init(MachineState *machine)
         sysbus_mmio_map(s, 0, 0xf0800000);
         sysbus_mmio_map(s, 1, 0xf0c00000);
         /* PCI hole */
-        memory_region_add_subregion(get_system_memory(), 0x90000000,
+        memory_region_add_subregion(get_system_memory(), U3_AGP_MEM_BASE,
                                     sysbus_mmio_get_region(s, 2));
         /* Register 8 MB of ISA IO space */
         memory_region_add_subregion(get_system_memory(), 0xf0000000,

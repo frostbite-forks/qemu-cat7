@@ -289,9 +289,14 @@ static void pci_u3_agp_init(Object *obj)
     memory_region_init_io(&s->pci_io, OBJECT(s), &unassigned_io_ops, obj,
                           "unin-pci-isa-mmio", 0x00800000);
 
+    /*
+     * 512MB at 0x90000000-0xafffffff: two 256MB regions of the address
+     * select, so a card with a 256MB frame-buffer BAR (the X800 XT) still
+     * has room for its register BAR and ROM.
+     */
     memory_region_init_alias(&s->pci_hole, OBJECT(s),
                              "unin-pci-hole", &s->pci_mmio,
-                             0x90000000ULL, 0x10000000ULL);
+                             U3_AGP_MEM_BASE, U3_AGP_MEM_SIZE);
 
     sysbus_init_mmio(sbd, &h->conf_mem);
     sysbus_init_mmio(sbd, &h->data_mem);
@@ -430,7 +435,7 @@ static const struct {
     hwaddr size;
 } u3_ht_mem_windows[3] = {
     { 0x80000000, 0x10000000 },
-    { 0xa0000000, 0x50000000 },
+    { 0xb0000000, 0x40000000 },     /* 0x9 and 0xa are the AGP window's */
     { 0xfa000000, 0x05000000 },
 };
 
@@ -618,8 +623,8 @@ static void u3_agp_pci_host_realize(PCIDevice *d, Error **errp)
                  PCI_AGP_COMMAND_FW | PCI_AGP_COMMAND_RATE4 |
                  PCI_AGP_COMMAND_RATE2 | PCI_AGP_COMMAND_RATE1);
 
-    /* address select: one bit per 256 MB region decoded to AGP */
-    pci_set_long(d->config + 0x48, 1u << (16 + 9));
+    /* address select: one bit per 256 MB region decoded to AGP (0x9, 0xa) */
+    pci_set_long(d->config + 0x48, (1u << (16 + 9)) | (1u << (16 + 10)));
     pci_set_long(d->wmask + 0x48, 0);
 
     memset(d->wmask + U3_CFG_GART_BASE, 0xff,
@@ -686,8 +691,11 @@ static void u3_agp_pci_host_config_write(PCIDevice *d, uint32_t addr,
     d->config[U3_CFG_GART_CTRL] &= ~U3_GART_CTRL_INV;
 }
 
-/* Decode register: 16M at 0xfa000000-0xfeffffff, 256M at 0x8 and 0xa-0xe */
-#define U3_HT_DECODE    0x003f00be
+/*
+ * Decode register: 16M at 0xfa000000-0xfeffffff, 256M at 0x8 and 0xb-0xe
+ * (bit n is region 0xf - n). Regions 0x9 and 0xa belong to AGP.
+ */
+#define U3_HT_DECODE    0x003f009e
 
 static void u3_ht_pci_host_realize(PCIDevice *d, Error **errp)
 {

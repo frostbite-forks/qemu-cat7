@@ -88,6 +88,10 @@ OBJECT_DECLARE_SIMPLE_TYPE(UNINState, UNI_NORTH)
 #define U3_AGP_SLOT_IRQ         0x30
 #define U3_AGP_NUM_IRQS         5
 
+/* U3 AGP memory window: address-select regions 0x9 and 0xa */
+#define U3_AGP_MEM_BASE         0x90000000ULL
+#define U3_AGP_MEM_SIZE         0x20000000ULL
+
 /* U3 HyperTransport host */
 #define U3_HT_CFG_BASE      0xf2000000
 #define U3_HT_CFG_SIZE      0x02000000

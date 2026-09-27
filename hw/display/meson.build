@@ -80,6 +80,8 @@ elif host_os == 'windows'
                    cc.find_library('user32')]
 endif
 system_ss.add(when: 'CONFIG_ATI_R350', if_true: [files('ati_r350.c', 'ati_r350_2d.c', 'ati_r350_3d.c', 'ati_r350_dbg.c', 'ati_r350_pvs.c', 'ati_r350_pvs_glsl.c', 'ati_r350_us.c', 'ati_r350_us_glsl.c', 'ati_r350_gl.c'), r350_gl_deps])
+# ati_r423_gl.c needs the same host GL libraries as ati_r350_gl.c.
+system_ss.add(when: 'CONFIG_ATI_R423', if_true: [files('ati_r423.c', 'ati_r423_2d.c', 'ati_r423_3d.c', 'ati_r423_dbg.c', 'ati_r423_pvs.c', 'ati_r423_pvs_glsl.c', 'ati_r423_us.c', 'ati_r423_us_glsl.c', 'ati_r423_gl.c'), r350_gl_deps])
 
 system_ss.add(when: [pvg, 'CONFIG_MAC_PVG_PCI'],     if_true: [files('apple-gfx.m', 'apple-gfx-pci.m')])
 system_ss.add(when: [pvg, 'CONFIG_MAC_PVG_MMIO'],    if_true: [files('apple-gfx.m', 'apple-gfx-mmio.m')])

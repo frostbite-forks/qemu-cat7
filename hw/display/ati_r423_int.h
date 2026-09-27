@@ -738,6 +738,21 @@ struct ATIR423State {
     bool hw_cursor_on;
     uint32_t hw_cursor_sum;
     /*
+     * "guest-hwcursor" (default on): draw the hardware cursor into the
+     * frame ourselves instead of handing it to the UI as its pointer.
+     * Handed over, a relative-mouse UI (SDL, GTK, with the usb-mouse the
+     * G5 has) chases the guest's cursor by warping the host pointer onto
+     * every position the guest reports -- and under TCG those arrive late
+     * and accelerated, so the two loops fight and the pointer jumps. Drawn
+     * in, the UI sees no guest cursor and sends plain relative motion.
+     * `gcur` is the decoded image (QEMUCursor layout, a<<24|b<<16|g<<8|r),
+     * `gcur_alpha` says it is CUR_MODE 3's per-pixel alpha rather than the
+     * opaque/transparent/invert codes of the other modes.
+     */
+    bool guest_hwcursor;
+    struct QEMUCursor *gcur;
+    bool gcur_alpha;
+    /*
      * CUR_LOCK is a single bit that merely appears in bit 31 of all three
      * of CUR_OFFSET / CUR_HORZ_VERT_POSN / CUR_HORZ_VERT_OFF (RRG 3-80):
      * the most recent write to any of them sets or clears it. Kept here

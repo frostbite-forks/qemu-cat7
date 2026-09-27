@@ -2228,25 +2228,26 @@ static R100Color r100_sample_volume(ATIVGAState *s,
 {
     float w = texture->r_nonparametric ? r_coord : r_coord * texture->depth;
     R100TextureAxis zaxis;
-    R100Color near, far;
+    /* not near/far: the Windows headers define both as empty macros */
+    R100Color slice0, slice1;
 
     if (!isfinite(w) || fabsf(w) >= R100_MAX_SAFE_TEXEL_COORD) {
         return (R100Color) { 1.0f, 1.0f, 1.0f, 1.0f };
     }
     zaxis = r100_texture_axis(w, texture->depth, texture->rmode,
                               texture->d3d_border, linear);
-    near = zaxis.border[0] ? texture->border_color :
+    slice0 = zaxis.border[0] ? texture->border_color :
         r100_sample_texture_level(s, texture, s_coord, t_coord,
                                   texture->nonparametric, 0, zaxis.texel[0],
                                   linear, cache);
     if (!linear) {
-        return near;
+        return slice0;
     }
-    far = zaxis.border[1] ? texture->border_color :
+    slice1 = zaxis.border[1] ? texture->border_color :
         r100_sample_texture_level(s, texture, s_coord, t_coord,
                                   texture->nonparametric, 0, zaxis.texel[1],
                                   linear, cache);
-    return r100_color_lerp(near, far, zaxis.fraction);
+    return r100_color_lerp(slice0, slice1, zaxis.fraction);
 }
 
 static R100Color r100_sample_texture(ATIVGAState *s, R100DrawState *draw,
@@ -3672,7 +3673,7 @@ void ati_3d_raster_init(ATIVGAState *s)
     R100Raster *q;
 
     if (!want) {
-        long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+        unsigned int cpus = g_get_num_processors();
 
         /* leave the vCPUs and the main loop room */
         want = cpus > 2 ? cpus / 2 : 1;
@@ -5706,8 +5707,6 @@ static uint32_t r100_packet_dwords(uint32_t header)
         return extract32(header, R100_CP_PACKET_COUNT_SHIFT, 14) + 2;
     }
 }
-
-static void ati_engine_kick(ATIVGAState *s);
 
 /*
  * With the engine thread, a PIO dword goes into the engine's queue and

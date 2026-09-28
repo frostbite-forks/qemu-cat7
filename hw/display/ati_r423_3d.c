@@ -2668,6 +2668,10 @@ static void r300_tex_setup(ATIR423State *s, R300DrawState *d, unsigned unit)
     } else {
         u->pitch = (uint32_t)u->w * (u->bpp / 8);
     }
+    if (u->en) {
+        trace_ati_r423_3d_tex(unit, u->off, u->w, u->h, u->pitch, u->code,
+                              txfmt0, txfmt2);
+    }
 }
 
 /*

@@ -1106,7 +1106,8 @@ static int64_t ati_r423_beam_phase_ns(void)
 /*
  * Where a US instruction-window register lands in the R400 store: the
  * slot the window names, in the bank US_CODE_BANK selects. `base` must
- * lie in US_TEX_INST_n or in one of the four US_ALU_* windows.
+ * lie in US_TEX_INST_n or in one of the four US_ALU_* windows, or the
+ * US_ALU_EXT_ADDR window that follows them.
  */
 static uint32_t *ati_r423_us_slot(ATIR423State *s, uint32_t base)
 {
@@ -1129,8 +1130,10 @@ static uint32_t *ati_r423_us_slot(ATIR423State *s, uint32_t base)
         return &s->us_a_addr[i];
     case 2:
         return &s->us_rgb_inst[i];
-    default:
+    case 3:
         return &s->us_a_inst[i];
+    default:
+        return &s->us_alu_ext[i];   /* R400_US_ALU_EXT_ADDR_n */
     }
 }
 
@@ -1492,7 +1495,7 @@ static uint32_t ati_r423_reg_read32(ATIR423State *s, uint32_t base)
     case R300_US_TEX_INST_0 ...
          R300_US_TEX_INST_0 + (R423_US_TEX_BANK_SLOTS - 1) * 4:
     case R300_US_ALU_RGB_ADDR_0 ...
-         R300_US_ALU_ALPHA_INST_0 + (R423_US_ALU_BANK_SLOTS - 1) * 4:
+         R400_US_ALU_EXT_ADDR_0 + (R423_US_ALU_BANK_SLOTS - 1) * 4:
         /* the windows read back the bank US_CODE_BANK selects */
         val = *ati_r423_us_slot(s, base);
         break;
@@ -1996,7 +1999,7 @@ static void ati_r423_reg_write32(ATIR423State *s, uint32_t base,
     case R300_US_TEX_INST_0 ...
          R300_US_TEX_INST_0 + (R423_US_TEX_BANK_SLOTS - 1) * 4:
     case R300_US_ALU_RGB_ADDR_0 ...
-         R300_US_ALU_ALPHA_INST_0 + (R423_US_ALU_BANK_SLOTS - 1) * 4:
+         R400_US_ALU_EXT_ADDR_0 + (R423_US_ALU_BANK_SLOTS - 1) * 4:
         s->regs[base >> 2] = val;
         *ati_r423_us_slot(s, base) = val;
         /* a program rewritten in place must be decoded again */
@@ -3481,6 +3484,7 @@ static void ati_r423_reset_hold(Object *obj, ResetType type)
     memset(s->us_rgb_inst, 0, sizeof(s->us_rgb_inst));
     memset(s->us_a_addr, 0, sizeof(s->us_a_addr));
     memset(s->us_a_inst, 0, sizeof(s->us_a_inst));
+    memset(s->us_alu_ext, 0, sizeof(s->us_alu_ext));
     s->us_sig = 0;
     s->swap_valid = false;          /* the surface registers just went */
     s->draw_xr = -1;                /* nothing has been drawn with any */
@@ -4363,6 +4367,7 @@ static const char *const ati_r423_gap_names[R423_GAP_MAX] = {
     [R423_GAP_FS_RS_ROUTE]  = "rasterizer attribute routing",
     [R423_GAP_FS_OUT_FMT]   = "fragment output format",
     [R423_GAP_ZB_FORMAT]    = "depth buffer format",
+    [R423_GAP_FS_CONST]     = "fragment constant index",
 };
 
 void ati_r423_note_gap(ATIR423State *s, ATIR423GapKind kind, unsigned idx)

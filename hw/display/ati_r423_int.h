@@ -132,6 +132,7 @@ typedef enum ATIR423GapKind {
     R423_GAP_FS_RS_ROUTE,    /* rasterizer routes something we do not emit */
     R423_GAP_FS_OUT_FMT,     /* US_OUT_FMT_0 pixel format not modelled */
     R423_GAP_ZB_FORMAT,      /* ZB_FORMAT depth format not modelled */
+    R423_GAP_FS_CONST,       /* US_ALU_EXT_ADDR names a constant past 31 */
     R423_GAP_MAX
 } ATIR423GapKind;
 
@@ -883,6 +884,7 @@ struct ATIR423State {
     uint32_t us_rgb_inst[R300_US_ALU_SLOTS];
     uint32_t us_a_addr[R300_US_ALU_SLOTS];
     uint32_t us_a_inst[R300_US_ALU_SLOTS];
+    uint32_t us_alu_ext[R300_US_ALU_SLOTS];     /* US_ALU_EXT_ADDR_n */
     uint64_t us_draws, us_refused;
     /*
      * The same program as GLSL, for the host-GPU backend, translated

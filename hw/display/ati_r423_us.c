@@ -88,8 +88,16 @@ static void us_gap_out_fmt(R300UsGaps *g, uint8_t v)
     }
 }
 
+static void us_gap_konst(R300UsGaps *g, uint8_t v)
+{
+    if (g && !g->has_konst) {
+        g->has_konst = true;
+        g->konst = v;
+    }
+}
+
 static void us_decode_alu(R300UsAlu *a, uint32_t rgb_addr, uint32_t rgb_inst,
-                          uint32_t a_addr, uint32_t a_inst)
+                          uint32_t a_addr, uint32_t a_inst, uint32_t ext)
 {
     unsigned n;
 
@@ -97,9 +105,11 @@ static void us_decode_alu(R300UsAlu *a, uint32_t rgb_addr, uint32_t rgb_inst,
         unsigned ra = (rgb_addr >> R300_US_ADDR_SRC_SHIFT(n)) & 0x3f;
         unsigned aa = (a_addr >> R300_US_ADDR_SRC_SHIFT(n)) & 0x3f;
 
-        a->rgb_src[n] = ra & R300_US_ADDR_SRC_MASK;
+        a->rgb_src[n] = (ra & R300_US_ADDR_SRC_MASK) |
+                        ((ext & R400_US_EXT_RGB_SRC_MSB(n)) ? 0x20 : 0);
         a->rgb_src_const[n] = (ra & R300_US_ADDR_SRC_CONST) != 0;
-        a->a_src[n] = aa & R300_US_ADDR_SRC_MASK;
+        a->a_src[n] = (aa & R300_US_ADDR_SRC_MASK) |
+                      ((ext & R400_US_EXT_A_SRC_MSB(n)) ? 0x20 : 0);
         a->a_src_const[n] = (aa & R300_US_ADDR_SRC_CONST) != 0;
         a->rgb_sel[n] = (rgb_inst >> R300_US_INST_SEL_SHIFT(n)) &
                         R300_US_INST_SEL_MASK;
@@ -121,8 +131,10 @@ static void us_decode_alu(R300UsAlu *a, uint32_t rgb_addr, uint32_t rgb_inst,
     a->a_omod = (a_inst >> R300_US_INST_OMOD_SHIFT) & R300_US_INST_OMOD_MASK;
     a->rgb_clamp = (rgb_inst & R300_US_INST_CLAMP) != 0;
     a->a_clamp = (a_inst & R300_US_INST_CLAMP) != 0;
-    a->rgb_dst = (rgb_addr >> R300_US_ADDR_DST_SHIFT) & R300_US_ADDR_DST_MASK;
-    a->a_dst = (a_addr >> R300_US_ADDR_DST_SHIFT) & R300_US_ADDR_DST_MASK;
+    a->rgb_dst = ((rgb_addr >> R300_US_ADDR_DST_SHIFT) & R300_US_ADDR_DST_MASK) |
+                 ((ext & R400_US_EXT_RGB_DST_MSB) ? 0x20 : 0);
+    a->a_dst = ((a_addr >> R300_US_ADDR_DST_SHIFT) & R300_US_ADDR_DST_MASK) |
+               ((ext & R400_US_EXT_A_DST_MSB) ? 0x20 : 0);
     a->rgb_wmask = (rgb_addr >> R300_US_ADDR_RGB_WMASK_SHIFT) &
                    R300_US_ADDR_RGB_MASK;
     a->rgb_omask = (rgb_addr >> R300_US_ADDR_RGB_OMASK_SHIFT) &
@@ -410,6 +422,7 @@ void r423_us_analyse(R300UsProgram *p,
                      const uint32_t *tex_inst,
                      const uint32_t *rgb_addr, const uint32_t *rgb_inst,
                      const uint32_t *a_addr, const uint32_t *a_inst,
+                     const uint32_t *alu_ext,
                      const float (*konst)[4],
                      uint32_t rs_inst_count, const uint32_t *rs_inst,
                      const uint32_t *rs_ip)
@@ -450,7 +463,8 @@ void r423_us_analyse(R300UsProgram *p,
         return;
     }
     p->nlevels = nlevel + 1;
-    p->nregs = (us_pixsize & 0x1f) + 1;
+    /* six bits on the R400, whose frame is 64 temporaries deep */
+    p->nregs = (us_pixsize & 0x3f) + 1;
 
     for (lv = 0; lv < p->nlevels; lv++) {
         unsigned n = 3 - nlevel + lv;
@@ -572,8 +586,21 @@ void r423_us_analyse(R300UsProgram *p,
         for (i = 0; i < L->nalu; i++) {
             R300UsAlu *a = &p->alu[L->alu_at + i];
             unsigned k = L->alu_slot + i;
+            unsigned n;
 
-            us_decode_alu(a, rgb_addr[k], rgb_inst[k], a_addr[k], a_inst[k]);
+            us_decode_alu(a, rgb_addr[k], rgb_inst[k], a_addr[k], a_inst[k],
+                          alu_ext[k]);
+            for (n = 0; n < 3; n++) {
+                /* an EXT MSB on a constant names past the constant file */
+                if (a->rgb_src_const[n] && a->rgb_src[n] >= R300_US_CONSTS) {
+                    us_gap_konst(&p->gaps, a->rgb_src[n]);
+                    p->expressible = false;
+                }
+                if (a->a_src_const[n] && a->a_src[n] >= R300_US_CONSTS) {
+                    us_gap_konst(&p->gaps, a->a_src[n]);
+                    p->expressible = false;
+                }
+            }
             if (!us_rgb_op_known(a->rgb_op)) {
                 us_gap_rgb_op(&p->gaps, a->rgb_op);
                 p->expressible = false;

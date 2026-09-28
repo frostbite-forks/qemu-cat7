@@ -2372,7 +2372,7 @@ static bool r300_fs_setup(ATIR423State *s, R300DrawState *d)
           ((uint64_t)!!(regs[R400_US_CODE_BANK >> 2] & R400_US_R390_MODE)
            << 49);
     if (sig != s->us_sig ||
-        p->nregs != (regs[R300_US_PIXSIZE >> 2] & 0x1f) + 1) {
+        p->nregs != (regs[R300_US_PIXSIZE >> 2] & 0x3f) + 1) {
         s->us_sig = sig;
         for (i = 0; i < R300_US_CONSTS; i++) {
             unsigned k = (R300_PFS_PARAM_0_X >> 2) + i * 4;
@@ -2391,7 +2391,7 @@ static bool r300_fs_setup(ATIR423State *s, R300DrawState *d)
                         regs[R300_US_OUT_FMT_0 >> 2],
                         s->us_tex_inst,
                         s->us_rgb_addr, s->us_rgb_inst,
-                        s->us_a_addr, s->us_a_inst,
+                        s->us_a_addr, s->us_a_inst, s->us_alu_ext,
                         konst,
                         regs[R300_RS_INST_COUNT >> 2],
                         &regs[R300_RS_INST_0 >> 2],
@@ -2416,6 +2416,9 @@ static bool r300_fs_setup(ATIR423State *s, R300DrawState *d)
             }
             if (g->has_out_fmt) {
                 ati_r423_note_gap(s, R423_GAP_FS_OUT_FMT, g->out_fmt);
+            }
+            if (g->has_konst) {
+                ati_r423_note_gap(s, R423_GAP_FS_CONST, g->konst);
             }
             /*
              * The words that describe the refused program, so a gap

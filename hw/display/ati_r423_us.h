@@ -58,7 +58,8 @@
  */
 #define R300_US_ALU_SLOTS       512
 #define R300_US_TEX_SLOTS       512
-#define R300_US_REGS            32
+/* 64 temporaries on the R400: the ALU address MSBs in US_ALU_EXT_ADDR */
+#define R300_US_REGS            64
 #define R300_US_CONSTS          32
 #define R300_US_RS_INSTS        16
 #define R300_US_RS_IPS          8
@@ -121,6 +122,17 @@
 #define R300_US_ADDR_SRC_CONST       0x20
 #define R300_US_ADDR_DST_SHIFT       18
 #define R300_US_ADDR_DST_MASK        0x1f
+/*
+ * US_ALU_EXT_ADDR_n (R400): one word beside each ALU slot, giving each of
+ * its register addresses a sixth bit -- sources 0-2 and the destination,
+ * RGB side then alpha side. It is what makes the R420's 64 temporaries
+ * addressable; applied to a constant it would name one past the 32-entry
+ * constant file, which the decoder refuses.
+ */
+#define R400_US_EXT_RGB_SRC_MSB(n)   (1u << (n))
+#define R400_US_EXT_RGB_DST_MSB      (1u << 3)
+#define R400_US_EXT_A_SRC_MSB(n)     (1u << ((n) + 4))
+#define R400_US_EXT_A_DST_MSB        (1u << 7)
 #define R300_US_ADDR_RGB_WMASK_SHIFT 23     /* three bits, R G B */
 #define R300_US_ADDR_RGB_OMASK_SHIFT 26
 #define R300_US_ADDR_RGB_MASK        0x7
@@ -330,6 +342,8 @@ typedef struct R300UsGaps {
     uint8_t rgb_op, a_op, tex_op, indirect, rs_route, out_fmt;
     bool has_rgb_op, has_a_op, has_tex_op;
     bool has_indirect, has_rs_route, has_out_fmt;
+    uint8_t konst;              /* an R400 EXT-addressed constant, >= 32 */
+    bool has_konst;
 } R300UsGaps;
 
 typedef struct R300UsProgram {
@@ -442,6 +456,7 @@ void r423_us_analyse(R300UsProgram *p,
                      const uint32_t *tex_inst,
                      const uint32_t *rgb_addr, const uint32_t *rgb_inst,
                      const uint32_t *a_addr, const uint32_t *a_inst,
+                     const uint32_t *alu_ext,
                      const float (*konst)[4],
                      uint32_t rs_inst_count, const uint32_t *rs_inst,
                      const uint32_t *rs_ip);

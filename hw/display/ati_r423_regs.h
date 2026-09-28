@@ -1097,6 +1097,11 @@
  * MSBs of the ALU relocation and of each level's ALU start and size, and
  * US_CODE_ADDR_n's top byte those of its texture start and size.
  */
+/*
+ * US_ALU_EXT_ADDR_n: one word per ALU slot, banked like the four ALU
+ * windows above; see R400_US_EXT_* in ati_r423_us.h for its bits.
+ */
+#define R400_US_ALU_EXT_ADDR_0        0x4ac0
 #define R400_US_CODE_BANK             0x46b8
 #define R400_US_BANK_MASK             0xf
 #define R400_US_R390_MODE             (1u << 4)

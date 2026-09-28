@@ -707,6 +707,7 @@ bool ati_r350_gl_admit(ATIR350State *s, uint32_t off, uint32_t len)
 
 static void ati_r350_cursor_update(ATIR350State *s);
 static void ati_r350_cursor_apply(ATIR350State *s);
+static void ati_r350_cursor_composite(ATIR350State *s, DisplaySurface *ds);
 
 static bool ati_r350_update_display(void *opaque)
 {
@@ -896,6 +897,11 @@ static bool ati_r350_update_display(void *opaque)
         ati_r350_cursor_update(s);
         return true;
     }
+    /*
+     * The cursor first: with guest-hwcursor it is part of this frame, and
+     * a change it asks a redraw for is the redraw being done right now.
+     */
+    ati_r350_cursor_apply(s);
     s->force_redraw = false;
     if (trace_event_get_state_backends(TRACE_ATI_R350_VRAM_PEEK)) {
         uint8_t *vp = (uint8_t *)memory_region_get_ram_ptr(&s->vram);
@@ -931,7 +937,7 @@ static bool ati_r350_update_display(void *opaque)
     default:
         break;
     }
-    ati_r350_cursor_apply(s);
+    ati_r350_cursor_composite(s, ds);
     qemu_console_update_full(s->con);
 
     return true;
@@ -3515,6 +3521,82 @@ static void ati_r350_reset_hold(Object *obj, ResetType type)
  * classic Mac cursors only use that code to soften edges.
  */
 /*
+ * Hand the cursor state to wherever it is drawn: the UI's own pointer, or
+ * -- with guest-hwcursor -- our frame, which then has to be redrawn. `c`
+ * is a new image or NULL for a move; the caller keeps its reference.
+ */
+static void ati_r350_cursor_publish(ATIR350State *s, QEMUCursor *c,
+                                    bool alpha, int x, int y, bool on)
+{
+    if (s->guest_hwcursor) {
+        if (c) {
+            cursor_ref(c);
+            if (s->gcur) {
+                cursor_unref(s->gcur);
+            }
+            s->gcur = c;
+            s->gcur_alpha = alpha;
+        }
+        s->force_redraw = true;
+        return;
+    }
+    if (c) {
+        qemu_console_set_cursor(s->con, c);
+    }
+    qemu_console_set_mouse(s->con, x, y, on);
+}
+
+/*
+ * guest-hwcursor: blend the cursor into the frame just drawn, at the
+ * image's own top-left (hw_cursor_x/y), after the DAC -- the sprite is
+ * not gamma-corrected on the way out. The coded modes know three
+ * values: opaque, transparent, and 0x80000000, "invert the screen".
+ */
+static void ati_r350_cursor_composite(ATIR350State *s, DisplaySurface *ds)
+{
+    const QEMUCursor *c = s->gcur;
+    int w = surface_width(ds), h = surface_height(ds);
+    int row, px;
+
+    if (!s->guest_hwcursor || !s->hw_cursor_on || !c) {
+        return;
+    }
+    for (row = 0; row < c->height; row++) {
+        int y = s->hw_cursor_y + row;
+        uint32_t *dst;
+
+        if (y < 0 || y >= h) {
+            continue;
+        }
+        dst = (uint32_t *)((uint8_t *)surface_data(ds) +
+                           y * surface_stride(ds));
+        for (px = 0; px < c->width; px++) {
+            int x = s->hw_cursor_x + px;
+            uint32_t v = c->data[row * c->width + px];
+            uint32_t a = v >> 24, d, r, g, b;
+
+            if (x < 0 || x >= w || !a) {
+                continue;
+            }
+            if (!s->gcur_alpha && v == 0x80000000u) {
+                dst[x] ^= 0x00ffffffu;
+                continue;
+            }
+            r = v & 0xff;
+            g = (v >> 8) & 0xff;
+            b = (v >> 16) & 0xff;
+            if (a != 0xff && s->gcur_alpha) {
+                d = dst[x];
+                r = (r * a + ((d >> 16) & 0xff) * (255 - a)) / 255;
+                g = (g * a + ((d >> 8) & 0xff) * (255 - a)) / 255;
+                b = (b * a + (d & 0xff) * (255 - a)) / 255;
+            }
+            dst[x] = 0xff000000u | (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
+/*
  * Apply the cursor registers to the host pointer. Called from the
  * coalescing timer (see ati_r350_cursor_update) and from the display
  * refresh path.
@@ -3573,7 +3655,7 @@ static void ati_r350_cursor_apply(ATIR350State *s)
             trace_ati_r350_cursor_off(s->hw_cursor_x, s->hw_cursor_y);
             s->hw_cursor_on = false;
             s->hw_cursor_sum = 0;
-            qemu_console_set_mouse(s->con, 0, 0, false);
+            ati_r350_cursor_publish(s, NULL, false, 0, 0, false);
         }
         return;
     }
@@ -3629,7 +3711,7 @@ static void ati_r350_cursor_apply(ATIR350State *s)
             trace_ati_r350_cursor_move(vram_off, x, y, sum);
             s->hw_cursor_x = x;
             s->hw_cursor_y = y;
-            qemu_console_set_mouse(s->con, x, y, true);
+            ati_r350_cursor_publish(s, NULL, false, x, y, true);
         }
         return;
     }
@@ -3663,13 +3745,12 @@ static void ati_r350_cursor_apply(ATIR350State *s)
              * (or the box the junk decodes to) would persist otherwise,
              * since a console cursor cannot be undefined */
             c = ati_r350_builtin_arrow();
-            qemu_console_set_cursor(s->con, c);
-            cursor_unref(c);
             s->hw_cursor_on = true;
             s->hw_cursor_sum = sum;
             s->hw_cursor_x = x;
             s->hw_cursor_y = y;
-            qemu_console_set_mouse(s->con, x, y, true);
+            ati_r350_cursor_publish(s, c, false, x, y, true);
+            cursor_unref(c);
             return;
         }
     }
@@ -3738,13 +3819,13 @@ static void ati_r350_cursor_apply(ATIR350State *s)
             trace_ati_r350_cursor_dump(offs, row * 16, hi, lo);
         }
     }
-    qemu_console_set_cursor(s->con, c);
-    cursor_unref(c);
     s->hw_cursor_on = true;
     s->hw_cursor_sum = sum;
     s->hw_cursor_x = x;
     s->hw_cursor_y = y;
-    qemu_console_set_mouse(s->con, x, y, true);
+    ati_r350_cursor_publish(s, c, cur_mode == R350_CUR_MODE_ARGB_ALPHA,
+                            x, y, true);
+    cursor_unref(c);
 }
 
 static void ati_r350_cursor_timer(void *opaque)
@@ -4106,6 +4187,10 @@ static void ati_r350_exit(PCIDevice *dev)
     }
     ati_r350_gl_close(s->gl_ctx);
     s->gl_ctx = NULL;
+    if (s->gcur) {
+        cursor_unref(s->gcur);
+        s->gcur = NULL;
+    }
     g_free(s->gl_before);
     g_free(s->gl_out);
     g_free(s->gl_sw);
@@ -4144,6 +4229,13 @@ static const Property ati_r350_properties[] = {
     DEFINE_PROP_UINT32("fillwatch", ATIR350State, fillwatch_off, 0),
     DEFINE_PROP_UINT32("fillwatch-size", ATIR350State, fillwatch_size, 0),
     DEFINE_PROP_BOOL("second-display", ATIR350State, second_display, false),
+    /*
+     * Draw the hardware cursor into the frame (the default) rather than
+     * hand it to the UI as its pointer; see guest_hwcursor in the header.
+     * Off gives a host-drawn pointer, which suits an absolute pointing
+     * device but makes a relative mouse jump under SDL and GTK.
+     */
+    DEFINE_PROP_BOOL("guest-hwcursor", ATIR350State, guest_hwcursor, true),
     /*
      * Diagnostic only: name a file and every draw the 3D engine runs is
      * written to it as a self-contained replay record for
